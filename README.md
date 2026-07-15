@@ -35,8 +35,8 @@
 ### 1. Clonar el repositorio
 
 ```bash
-git clone https://github.com/tu-usuario/reservas-ec.git
-cd reservas-ec
+git clone https://github.com/AlexDaniel593/app-reservas-sast-dast.git
+cd app-reservas-sast-dast
 ```
 
 ### 2. Variables de entorno
@@ -96,110 +96,15 @@ La app estará disponible en http://localhost:3000
 
 - Notificaciones automáticas vía Telegram sobre commits y análisis de calidad
 
----
-
-## 🔍 Quality Gates con SonarQube (DevSecOps)
-
-### 1. Levantar SonarQube localmente
-
-Se incluye un `docker-compose_sonar.yml` con SonarQube + PostgreSQL + GitHub Runner self-hosted.
-
-```bash
-# 1. Crear archivo .env basado en el ejemplo
-cp .env.example .env
-# Editar .env con tus tokens
-
-# 2. Iniciar los servicios
-docker compose -f docker-compose_sonar.yml up -d
-
-# 3. Acceder a SonarQube
-# URL: http://localhost:9000
-# Credenciales por defecto: admin / admin
-# Cambia la contraseña en el primer login.
-```
-
-### 2. Configurar el Quality Gate "StrictGate"
-
-1. Ve a **Administration > Quality Gates > Create**.
-2. Importa o copia la configuración desde `qualitygate.json`.
-3. Aplica el Quality Gate al proyecto `app-reservas`.
-
-| Métrica | Condición | Umbral |
-|---------|-----------|--------|
-| Blocker Issues | > | 0 |
-| Critical Issues | > | 0 |
-| Major Issues | > | 5 |
-| Security Hotspots Reviewed | < | 100% |
-| Coverage | < | 80% |
-| Duplicated Lines (%) | > | 3% |
-| Technical Debt Ratio | > | 2.5% |
-| Cyclomatic Complexity (total) | > | 50 |
-| Cognitive Complexity (total) | > | 30 |
-
-### 3. Ejecutar análisis de manera manual
-
-```bash
-# Instalar sonar-scanner globalmente (si no lo tienes)
-npm install -g sonar-scanner
-
-# Ejecutar análisis (desde la raíz del proyecto)
-sonar-scanner \
-  -Dsonar.projectKey=app-reservas \
-  -Dsonar.sources=. \
-  -Dsonar.host.url=http://localhost:9000 \
-  -Dsonar.token=squ_691f16133c4f8c9a4c81cd00d03ee0c214152e0b
-```
-
-### 4. Configurar GitHub Runner local
-
-1. Ve a tu repositorio en GitHub: **Settings > Actions > Runners > New self-hosted runner**.
-2. Copia el **RUNNER_TOKEN** que te proporciona GitHub.
-3. Pégalo en tu archivo `.env` en la variable `RUNNER_TOKEN`.
-4. Reinicia el contenedor del runner:
-   ```bash
-   docker compose -f docker-compose_sonar.yml restart github-runner
-   ```
-5. Verifica en GitHub que el runner aparece como **online**.
-
-### 5. Configurar Secrets en GitHub
+### 4. Configurar Secrets en GitHub
 
 Ve a **Settings > Secrets and variables > Actions > New repository secret** y añade:
 
 | Secret | Valor |
 |--------|-------|
-| `SONAR_TOKEN` | `squ_691f16133c4f8c9a4c81cd00d03ee0c214152e0b` |
-| `SONAR_HOST_URL` | `http://sonarqube:9000` (desde el runner Docker) |
-| `TELEGRAM_BOT_TOKEN` | `8845807646:AAG8LU1ywjIwd9eiIm83v6mC8KCz2eG-mDI` |
-| `TELEGRAM_CHAT_ID` | Obténlo con el script de abajo |
+| `TELEGRAM_BOT_TOKEN` | `bot_token` |
+| `TELEGRAM_CHAT_ID` | `chat_id` |
 
-> ⚠️ **Nunca subas tokens o credenciales al repositorio.**
-
-### 6. Configurar bot de Telegram y obtener Chat ID
-
-1. En Telegram, busca **@BotFather** y crea un bot (`/newbot`). Nombre sugerido: `Dev Bot`.
-2. Guarda el token HTTP proporcionado.
-3. Crea un grupo de Telegram e invita al bot.
-4. Envía un mensaje en el grupo.
-5. Ejecuta el siguiente script para obtener el Chat ID:
-
-```bash
-# Opción 1: Con Node.js
-node tools/get-telegram-chatid.js
-
-# Opción 2: Manualmente desde el navegador
-# https://api.telegram.org/bot8845807646:AAG8LU1ywjIwd9eiIm83v6mC8KCz2eG-mDI/getUpdates
-```
-
-6. Copia el **Chat ID** (generalmente un número negativo como `-1001234567890`) y guárdalo como secret `TELEGRAM_CHAT_ID` en GitHub.
-
-### 7. Workflows de GitHub Actions
-
-| Workflow | Archivo | Descripción |
-|----------|---------|-------------|
-| SonarQube | `.github/workflows/sonarqube.yml` | Análisis de calidad en push/PR usando runner self-hosted |
-| Telegram Notify | `.github/workflows/telegram-notify.yml` | Notificación de commits al grupo de Telegram |
-
----
 
 ### Roles del equipo
 
