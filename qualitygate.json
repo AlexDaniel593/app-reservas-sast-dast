@@ -1,0 +1,62 @@
+{
+  "name": "StrictGate",
+  "description": "Quality Gate restrictivo para garantizar alta calidad de código, seguridad y mantenibilidad en los microservicios de App Reservas.",
+  "conditions": [
+    {
+      "metric": "blocker_violations",
+      "operator": "GT",
+      "threshold": "0",
+      "description": "No se permiten issues de severidad Blocker"
+    },
+    {
+      "metric": "critical_violations",
+      "operator": "GT",
+      "threshold": "0",
+      "description": "No se permiten issues de severidad Critical"
+    },
+    {
+      "metric": "major_violations",
+      "operator": "GT",
+      "threshold": "5",
+      "description": "Máximo 5 issues de severidad Major"
+    },
+    {
+      "metric": "security_hotspots_reviewed",
+      "operator": "LT",
+      "threshold": "100",
+      "description": "100% de Security Hotspots deben estar revisados"
+    },
+    {
+      "metric": "coverage",
+      "operator": "LT",
+      "threshold": "80",
+      "description": "Cobertura de código mínima del 80%"
+    },
+    {
+      "metric": "duplicated_lines_density",
+      "operator": "GT",
+      "threshold": "3",
+      "description": "Máximo 3% de líneas duplicadas"
+    },
+    {
+      "metric": "sqale_index",
+      "operator": "GT",
+      "threshold": "2.5",
+      "description": "Technical Debt Ratio máximo del 2.5%"
+    },
+    {
+      "metric": "complexity",
+      "operator": "GT",
+      "threshold": "50",
+      "description": "Complejidad ciclomática total máxima de 50"
+    },
+    {
+      "metric": "cognitive_complexity",
+      "operator": "GT",
+      "threshold": "30",
+      "description": "Complejidad cognitiva total máxima de 30"
+    }
+  ],
+  "isDefault": false,
+  "notes": "Este Quality Gate debe aplicarse al proyecto 'app-reservas' en SonarQube. Para importarlo, ve a Administration > Quality Gates > Create > Copy from JSON."
+}
