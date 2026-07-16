@@ -1,0 +1,243 @@
+name: OWASP ZAP DAST Analysis
+
+on:
+  push:
+    branches: [ main, test, dev ]
+  pull_request:
+    branches: [ main, test, dev ]
+  workflow_dispatch:
+
+jobs:
+  dast:
+    name: Analisis DAST con OWASP ZAP
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    services:
+      mongo:
+        image: mongo:7
+        ports:
+          - 27017:27017
+        options: >-
+          --health-cmd "mongosh --eval 'db.runCommand({ ping: 1 })' || mongosh --eval 'db.runCommand({ ping: 1 })'"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: checkout codigo
+        uses: actions/checkout@v4
+
+      - name: iniciar servicios
+        run: docker compose up -d --build
+
+      - name: esperar servicios
+        run: |
+          echo "Esperando servicios..."
+          for i in {1..60}; do
+            AUTH_UP=false
+            FRONTEND_UP=false
+
+            if curl -sf http://localhost:4000/api/login > /dev/null 2>&1; then
+              AUTH_UP=true
+            fi
+            if curl -sf -o /dev/null http://localhost:3000 > /dev/null 2>&1; then
+              FRONTEND_UP=true
+            fi
+
+            if [ "$AUTH_UP" = true ] && [ "$FRONTEND_UP" = true ]; then
+              echo "Servicios listos"
+              break
+            fi
+            sleep 5
+          done
+
+          if ! curl -sf http://localhost:4000/api/login > /dev/null 2>&1; then
+            echo "Error: auth-service no disponible"
+            docker compose logs auth-service
+            exit 1
+          fi
+
+      - name: configurar autenticacion
+        run: |
+          curl -s -X POST http://localhost:4000/api/register \
+            -H "Content-Type: application/json" \
+            -d '{"name":"dastuser","email":"dast@test.com","password":"Dast123!"}' || true
+
+          sleep 2
+
+          TOKEN=$(curl -s -X POST http://localhost:4000/api/login \
+            -H "Content-Type: application/json" \
+            -d '{"email":"dast@test.com","password":"Dast123!"}' | jq -r '.token')
+
+          if [ "$TOKEN" = "null" ] || [ -z "$TOKEN" ]; then
+            echo "Error obteniendo token de autenticacion"
+            exit 1
+          fi
+
+          echo "AUTH_TOKEN=$TOKEN" >> $GITHUB_ENV
+          echo "Token obtenido correctamente"
+
+      - name: escaneo DAST frontend y APIs
+        id: zap_frontend
+        continue-on-error: true
+        run: |
+          mkdir -p reports
+          docker run -t \
+            --network host \
+            -v ${{ github.workspace }}/reports:/zap/wrk/:rw \
+            ghcr.io/zaproxy/zaproxy:stable \
+            zap-full-scan.py \
+            -t http://localhost:3000 \
+            -r dast-frontend.html \
+            -w dast-frontend.md \
+            -x dast-frontend.xml \
+            -m 20 \
+            -z "-config replacer.full_list(0).description=auth -config replacer.full_list(0).enabled=true -config replacer.full_list(0).matchtype=REQ_HEADER -config replacer.full_list(0).matchstr=Authorization -config replacer.full_list(0).replacement=Bearer $AUTH_TOKEN" \
+            || echo "ZAP frontend scan completed with warnings"
+
+      - name: escaneo DAST notification service
+        id: zap_notification
+        continue-on-error: true
+        run: |
+          docker run -t \
+            --network host \
+            -v ${{ github.workspace }}/reports:/zap/wrk/:rw \
+            ghcr.io/zaproxy/zaproxy:stable \
+            zap-full-scan.py \
+            -t http://localhost:5002 \
+            -r dast-notification.html \
+            -w dast-notification.md \
+            -x dast-notification.xml \
+            -m 10 \
+            || echo "ZAP notification scan completed with warnings"
+
+      - name: extraer alertas DAST
+        if: always()
+        run: |
+          HIGH=0
+          MEDIUM=0
+          LOW=0
+          INFO=0
+
+          if [ -f "reports/dast-frontend.xml" ]; then
+            HIGH=$((HIGH + $(grep -c 'riskcode="3"' reports/dast-frontend.xml 2>/dev/null || echo 0)))
+            MEDIUM=$((MEDIUM + $(grep -c 'riskcode="2"' reports/dast-frontend.xml 2>/dev/null || echo 0)))
+            LOW=$((LOW + $(grep -c 'riskcode="1"' reports/dast-frontend.xml 2>/dev/null || echo 0)))
+            INFO=$((INFO + $(grep -c 'riskcode="0"' reports/dast-frontend.xml 2>/dev/null || echo 0)))
+          fi
+
+          if [ -f "reports/dast-notification.xml" ]; then
+            NOTIF_HIGH=$(grep -c 'riskcode="3"' reports/dast-notification.xml 2>/dev/null || echo 0)
+            HIGH=$((HIGH + NOTIF_HIGH))
+            MEDIUM=$((MEDIUM + $(grep -c 'riskcode="2"' reports/dast-notification.xml 2>/dev/null || echo 0)))
+            LOW=$((LOW + $(grep -c 'riskcode="1"' reports/dast-notification.xml 2>/dev/null || echo 0)))
+            INFO=$((INFO + $(grep -c 'riskcode="0"' reports/dast-notification.xml 2>/dev/null || echo 0)))
+          else
+            NOTIF_HIGH=0
+          fi
+
+          TOTAL=$((HIGH + MEDIUM + LOW + INFO))
+
+          echo "DAST_HIGH=$HIGH" >> $GITHUB_ENV
+          echo "DAST_MEDIUM=$MEDIUM" >> $GITHUB_ENV
+          echo "DAST_LOW=$LOW" >> $GITHUB_ENV
+          echo "DAST_INFO=$INFO" >> $GITHUB_ENV
+          echo "DAST_TOTAL=$TOTAL" >> $GITHUB_ENV
+          echo "DAST_NOTIF_HIGH=$NOTIF_HIGH" >> $GITHUB_ENV
+
+          echo "Alertas encontradas:"
+          echo "  HIGH: $HIGH"
+          echo "  MEDIUM: $MEDIUM"
+          echo "  LOW: $LOW"
+          echo "  INFO: $INFO"
+          echo "  TOTAL: $TOTAL"
+
+      - name: subir reportes DAST
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dast-reports
+          path: reports/
+          retention-days: 30
+
+      - name: reporte en GitHub
+        if: always()
+        run: |
+          risk_emoji() {
+            case $1 in
+              0) echo "🟢" ;;
+              [1-9]|[1-9][0-9]) echo "🔴" ;;
+              *) echo "⚪" ;;
+            esac
+          }
+
+          cat >> $GITHUB_STEP_SUMMARY << EOF
+          # Reporte DAST - App Reservas
+
+          ## Resultados del escaneo
+
+          | Severidad | Cantidad |
+          |---|---|
+          | 🔴 High | **${DAST_HIGH}** |
+          | 🟠 Medium | **${DAST_MEDIUM}** |
+          | 🟡 Low | **${DAST_LOW}** |
+          | 🔵 Informational | **${DAST_INFO}** |
+          | **Total** | **${DAST_TOTAL}** |
+
+          ### Targets escaneados
+          - Frontend + APIs proxy: http://localhost:3000
+          - Notification Service: http://localhost:5002
+
+          ### Hallazgos en notification-service
+          - Alertas High sin autenticacion: **${DAST_NOTIF_HIGH}**
+
+          ---
+          *Escaneo ejecutado en rama \`${{ github.ref_name }}\`*
+          EOF
+
+      - name: construir mensaje para Telegram
+        if: always()
+        id: telegram_message
+        run: |
+          if [ "$DAST_HIGH" -gt 0 ]; then
+            STATUS_EMOJI="🔴"
+            STATUS_TXT="VULNERABILIDADES CRITICAS"
+          elif [ "$DAST_MEDIUM" -gt 0 ]; then
+            STATUS_EMOJI="🟠"
+            STATUS_TXT="VULNERABILIDADES MEDIAS"
+          else
+            STATUS_EMOJI="🟢"
+            STATUS_TXT="SIN VULNERABILIDADES CRITICAS"
+          fi
+
+          MESSAGE=$(cat <<EOF
+          <b>${STATUS_EMOJI} Analisis DAST - App Reservas</b>
+          
+          <b>Estado:</b> ${STATUS_TXT}
+          <b>Rama:</b> <code>${{ github.ref_name }}</code>
+          <b>Autor:</b> ${{ github.actor }}
+          
+          <b>Alertas encontradas:</b>
+          🔴 High: ${DAST_HIGH}
+          🟠 Medium: ${DAST_MEDIUM}
+          🟡 Low: ${DAST_LOW}
+          🔵 Informational: ${DAST_INFO}
+          <b>Total: ${DAST_TOTAL}</b>
+          
+          <b>Notification service (sin auth):</b>
+          🔴 Alertas High: ${DAST_NOTIF_HIGH}
+          
+          <a href="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}">Ver reporte completo</a>
+          EOF
+          )
+          echo "$MESSAGE" > telegram_dast_message.txt
+
+      - name: enviar notificacion a Telegram
+        if: always()
+        uses: appleboy/telegram-action@master
+        with:
+          to: ${{ secrets.TELEGRAM_CHAT_ID }}
+          token: ${{ secrets.TELEGRAM_TOKEN }}
+          format: html
+          message_file: telegram_dast_message.txt
