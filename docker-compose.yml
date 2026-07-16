@@ -69,6 +69,10 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: /api/auth
+        NEXT_PUBLIC_BOOKING_URL: /api/bookings
+        NEXT_PUBLIC_USER_URL: /api/users
     ports:
       - "3000:3000"
     depends_on:

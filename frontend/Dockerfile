@@ -1,10 +1,17 @@
 FROM node:18-alpine AS builder
 
+ARG NEXT_PUBLIC_API_URL
+ARG NEXT_PUBLIC_BOOKING_URL
+ARG NEXT_PUBLIC_USER_URL
+
 WORKDIR /app
 
 COPY package.json package-lock.json* ./
 COPY . .
-COPY .env.production.local .env.production.local
+
+RUN echo "NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL" > .env.production.local && \
+    echo "NEXT_PUBLIC_BOOKING_URL=$NEXT_PUBLIC_BOOKING_URL" >> .env.production.local && \
+    echo "NEXT_PUBLIC_USER_URL=$NEXT_PUBLIC_USER_URL" >> .env.production.local
 
 RUN npm install
 RUN npm run build
