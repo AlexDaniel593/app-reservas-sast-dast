@@ -27,21 +27,18 @@ jobs:
             AUTH_UP=false
             FRONTEND_UP=false
 
-            if curl -sf http://localhost:4000/api/login > /dev/null 2>&1; then
-              AUTH_UP=true
-            fi
-            if curl -sf -o /dev/null http://localhost:3000 > /dev/null 2>&1; then
-              FRONTEND_UP=true
-            fi
+            curl -s -o /dev/null --max-time 3 http://localhost:4000/api/login && AUTH_UP=true
+            curl -s -o /dev/null --max-time 3 http://localhost:3000 && FRONTEND_UP=true
 
             if [ "$AUTH_UP" = true ] && [ "$FRONTEND_UP" = true ]; then
               echo "Servicios listos"
               break
             fi
+            echo "Intento $i: auth=$AUTH_UP frontend=$FRONTEND_UP"
             sleep 5
           done
 
-          if ! curl -sf http://localhost:4000/api/login > /dev/null 2>&1; then
+          if ! curl -s -o /dev/null --max-time 3 http://localhost:4000/api/login; then
             echo "Error: auth-service no disponible"
             docker compose logs auth-service
             exit 1
