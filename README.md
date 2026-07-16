@@ -2,6 +2,10 @@
 
 **ReservasEC** es una plataforma fullstack de gestión de reservas desarrollada con una arquitectura de microservicios. Permite a los usuarios registrarse, iniciar sesión, gestionar su perfil, crear y cancelar reservas, y recibir notificaciones. El sistema está dockerizado para facilitar el despliegue local.
 
+**Link Telegram**
+
+[Link invitacion al grupo de telegram](https://t.me/+_X2qcq3m3fRiOWYx)
+
 ## 🚀 Tecnologías principales
 
 - **Frontend:** Next.js + Tailwind CSS
